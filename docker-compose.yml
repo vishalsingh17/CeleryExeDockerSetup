@@ -45,7 +45,68 @@ services:
 
   redis:
     image: redis:latest
+    expose:
+      - 6379
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 30s
+      retries: 50
+    restart: always
+
+  airflow-webserver:
+    <<: *airflow-common
+    command: webserver
+    ports:
+      - 8080:8080
+    healthcheck:
+      test: ["CMD", "curl", "--fail", "http://localhost:8080/health"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_successfully
+
+  airflow-triggerer:
+    <<: *airflow-common
+    command: trigerrer
+    healthcheck:
+      test: ["CMD-SHELL", 'airflow jobs check --job-type TriggererJob --hostname "$${HOSTNAME}"']
+      interval: 10s
+      timeout: 10s
+      retries: 5
+    restart: always
+    depends_on:
+      <<: *airflow-common-depends-on
+      airflow-init:
+        condition: service_completed_sucessfully
     
+    airflow-init:
+      <<: *airflow-common
+      entrypoint: /bin/bash
+      command:
+        - -c
+        - |
+          function ver() {
+            printf "%04d%04d%04d%04d" $${1//./ }
+          }
+          airflow_version=$$(AIRFLOW__LOGGING_LEVEL=INFO && gosu airflow airflow version)
+          airflow_version_comparable=$$(ver $${airflow_version})
+          min_airflow_version=2.2.0
+          min_airflow_version_comparable=$$(ver $${airflow_version})
+          if (( airflow_version_comparable < min_airflow_version_comparable)); then
+          echo
+          echo -e "\033[1;31mERROR!!!: Too old Airflow version $${airflow_version}!\e[0m"
+          echo "The minimum Airflow version supported: $${min_airflow_version}. Only use this or higher!"
+          echo
+          exit 1
+          fi
+
+      
+
 
 
 
